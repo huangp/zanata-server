@@ -37,6 +37,7 @@ import org.zanata.dao.GlossaryDAO;
 import org.zanata.model.HGlossaryTerm;
 import org.zanata.search.LevenshteinUtil;
 import org.zanata.security.ZanataIdentity;
+import org.zanata.util.GlossaryUtil;
 import org.zanata.util.ShortString;
 import org.zanata.webtrans.server.ActionHandlerFor;
 import org.zanata.webtrans.shared.model.GlossaryResultItem;
@@ -78,7 +79,7 @@ public class GetGlossaryHandler extends
         log.debug("Fetching Glossary matches({}) for \"{}\"", searchType,
                 abbrev);
 
-        LocaleId localeID = action.getLocaleId();
+        LocaleId localeId = action.getLocaleId();
         ArrayList<GlossaryResultItem> results;
 
         try {
@@ -94,7 +95,8 @@ public class GetGlossaryHandler extends
                 if (sourceTerm != null) {
                     targetTerm =
                             glossaryDAO.getTermByEntryAndLocale(sourceTerm
-                                    .getGlossaryEntry().getId(), localeID);
+                                    .getGlossaryEntry().getId(), localeId,
+                                    GlossaryUtil.GLOBAL_QUALIFIED_NAME);
                 }
                 if (targetTerm == null) {
                     continue;

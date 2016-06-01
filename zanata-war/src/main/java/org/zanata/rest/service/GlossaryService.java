@@ -22,6 +22,7 @@ import org.zanata.common.GlossarySortField;
 import org.zanata.common.LocaleId;
 import org.zanata.dao.GlossaryDAO;
 import org.zanata.exception.ZanataServiceException;
+import org.zanata.model.Glossary;
 import org.zanata.model.HGlossaryEntry;
 import org.zanata.model.HGlossaryTerm;
 import org.zanata.model.HLocale;
@@ -37,6 +38,7 @@ import org.zanata.security.ZanataIdentity;
 import org.zanata.service.GlossaryFileService;
 import org.zanata.service.LocaleService;
 import org.zanata.service.impl.GlossaryFileServiceImpl;
+import org.zanata.util.GlossaryUtil;
 
 @RequestScoped
 @Named("glossaryService")
@@ -63,13 +65,15 @@ public class GlossaryService implements GlossaryResource {
         HLocale srcLocale = localeServiceImpl.getByLocaleId(srcLocaleId);
 
         int entryCount =
-                glossaryDAO.getEntryCountBySourceLocales(LocaleId.EN_US);
+                glossaryDAO.getEntryCountBySourceLocales(LocaleId.EN_US,
+                        GlossaryUtil.GLOBAL_QUALIFIED_NAME);
 
         GlossaryLocaleInfo srcGlossaryLocale =
                 new GlossaryLocaleInfo(generateLocaleDetails(srcLocale), entryCount);
 
         Map<LocaleId, Integer> transMap =
-                glossaryDAO.getTranslationLocales(srcLocaleId);
+                glossaryDAO.getTranslationLocales(srcLocaleId,
+                        GlossaryUtil.GLOBAL_QUALIFIED_NAME);
 
         List<HLocale> supportedLocales =
             localeServiceImpl.getSupportedLocales();
@@ -140,9 +144,9 @@ public class GlossaryService implements GlossaryResource {
         List<HGlossaryEntry> hGlossaryEntries =
                 glossaryDAO.getEntriesByLocale(srcLocale, offset,
                         validatePageSize(sizePerPage),
-                        filter, convertToSortField(fields));
+                        filter, convertToSortField(fields), GlossaryUtil.GLOBAL_QUALIFIED_NAME);
         int totalCount =
-            glossaryDAO.getEntriesCount(srcLocale, filter);
+            glossaryDAO.getEntriesCount(srcLocale, filter, GlossaryUtil.GLOBAL_QUALIFIED_NAME);
 
         ResultList<GlossaryEntry> resultList = new ResultList<GlossaryEntry>();
         resultList.setTotalCount(totalCount);
@@ -241,7 +245,7 @@ public class GlossaryService implements GlossaryResource {
     public Response deleteAllEntries() {
         identity.checkPermission("", "glossary-delete");
 
-        int rowCount = glossaryDAO.deleteAllEntries();
+        int rowCount = glossaryDAO.deleteAllEntries(GlossaryUtil.GLOBAL_QUALIFIED_NAME);
         log.info("Glossary delete all: " + rowCount);
 
         return Response.ok().build();
@@ -319,4 +323,8 @@ public class GlossaryService implements GlossaryResource {
 
         return glossaryTerm;
     }
+
+
+    //2 services to get a glossary name for a project and global, return list
+    //all endpoint will take glossary name as query param - default to global/default
 }
