@@ -3,17 +3,19 @@ package org.zanata.rest.editor.service.resource;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.codehaus.enunciate.jaxrs.TypeHint;
+import org.zanata.rest.dto.Project;
 import org.zanata.rest.service.RestConstants;
 import org.zanata.rest.editor.MediaTypes;
 
 /**
  * @author Alex Eng <a href="mailto:aeng@redhat.com">aeng@redhat.com</a>
  */
+@Path(ProjectResource.SERVICE_PATH)
 @Produces({ MediaType.APPLICATION_JSON })
 @Consumes({ MediaType.APPLICATION_JSON })
 public interface ProjectResource {
@@ -21,12 +23,11 @@ public interface ProjectResource {
     public static final String PROJECT_SLUG_TEMPLATE = "/{projectSlug:"
             + RestConstants.SLUG_PATTERN + "}";
 
-    public static final String SERVICE_PATH = "/project";
+    public static final String SERVICE_PATH =
+        "/project" + PROJECT_SLUG_TEMPLATE;
 
     /**
      * Returns data for a single Project.
-     *
-     * @param projectSlug project identifier
      *
      * @return The following response status codes will be returned from this
      *         operation:<br>
@@ -40,6 +41,6 @@ public interface ProjectResource {
     @GET
     @Produces({ MediaTypes.APPLICATION_ZANATA_PROJECT_JSON,
             MediaType.APPLICATION_JSON })
-    @Path(PROJECT_SLUG_TEMPLATE)
-    public Response getProject(@PathParam("projectSlug") String projectSlug);
+    @TypeHint(Project.class)
+    public Response get();
 }

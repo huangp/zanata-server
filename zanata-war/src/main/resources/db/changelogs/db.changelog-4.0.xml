@@ -51,6 +51,10 @@
         <constraints nullable="false"/>
       </column>
     </createTable>
+
+    <createIndex tableName="Glossary" indexName="Idx_qualifiedName" unique="true">
+      <column name="qualifiedName" type="varchar(50)"/>
+    </createIndex>
   </changeSet>
 
   <changeSet id="4" author="aeng@redhat.com">

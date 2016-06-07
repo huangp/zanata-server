@@ -1,28 +1,39 @@
 package org.zanata.rest.service;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import javax.enterprise.context.RequestScoped;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
 import javax.inject.Named;
+import javax.ws.rs.core.StreamingOutput;
+
 import org.apache.deltaspike.jpa.api.transaction.Transactional;
 import org.apache.commons.lang.StringUtils;
 import org.jboss.resteasy.annotations.providers.multipart.MultipartForm;
+import org.zanata.adapter.glossary.GlossaryCSVWriter;
+import org.zanata.adapter.glossary.GlossaryPoWriter;
 import org.zanata.common.GlossarySortField;
 import org.zanata.common.LocaleId;
 import org.zanata.dao.GlossaryDAO;
 import org.zanata.exception.ZanataServiceException;
-import org.zanata.model.Glossary;
 import org.zanata.model.HGlossaryEntry;
 import org.zanata.model.HGlossaryTerm;
 import org.zanata.model.HLocale;
@@ -38,7 +49,6 @@ import org.zanata.security.ZanataIdentity;
 import org.zanata.service.GlossaryFileService;
 import org.zanata.service.LocaleService;
 import org.zanata.service.impl.GlossaryFileServiceImpl;
-import org.zanata.util.GlossaryUtil;
 
 @RequestScoped
 @Named("glossaryService")
@@ -59,21 +69,28 @@ public class GlossaryService implements GlossaryResource {
     private LocaleService localeServiceImpl;
 
     @Override
-    public Response getInfo() {
-        //set en-US as source, should get this from server settings.
-        LocaleId srcLocaleId = LocaleId.EN_US;
-        HLocale srcLocale = localeServiceImpl.getByLocaleId(srcLocaleId);
+    public Response getQualifiedName() {
+        List<String> names = Lists.newArrayList(GLOBAL_QUALIFIED_NAME);
+        return Response.ok(names).build();
+    }
+
+    @Override
+    public Response getInfo(
+        @DefaultValue(GLOBAL_QUALIFIED_NAME) @QueryParam("qualifiedName")
+            String qualifiedName) {
+        HLocale srcLocale = getSourceLocale();
 
         int entryCount =
-                glossaryDAO.getEntryCountBySourceLocales(LocaleId.EN_US,
-                        GlossaryUtil.GLOBAL_QUALIFIED_NAME);
+            glossaryDAO.getEntryCountBySourceLocales(srcLocale.getLocaleId(),
+                qualifiedName);
 
         GlossaryLocaleInfo srcGlossaryLocale =
-                new GlossaryLocaleInfo(generateLocaleDetails(srcLocale), entryCount);
+            new GlossaryLocaleInfo(generateLocaleDetails(srcLocale),
+                entryCount);
 
         Map<LocaleId, Integer> transMap =
-                glossaryDAO.getTranslationLocales(srcLocaleId,
-                        GlossaryUtil.GLOBAL_QUALIFIED_NAME);
+            glossaryDAO
+                .getTranslationLocales(srcLocale.getLocaleId(), qualifiedName);
 
         List<HLocale> supportedLocales =
             localeServiceImpl.getSupportedLocales();
@@ -81,7 +98,8 @@ public class GlossaryService implements GlossaryResource {
         List<GlossaryLocaleInfo> transLocale = Lists.newArrayList();
 
         supportedLocales.stream()
-            .filter(locale -> !locale.getLocaleId().equals(srcLocaleId))
+            .filter(
+                locale -> !locale.getLocaleId().equals(srcLocale.getLocaleId()))
             .forEach(locale -> {
                 LocaleDetails localeDetails = generateLocaleDetails(locale);
                 int count = transMap.containsKey(locale.getLocaleId()) ?
@@ -95,41 +113,6 @@ public class GlossaryService implements GlossaryResource {
         return Response.ok(glossaryInfo).build();
     }
 
-    private LocaleDetails generateLocaleDetails(HLocale locale) {
-        return new LocaleDetails(locale.getLocaleId(),
-            locale.retrieveDisplayName(), "");
-    }
-
-    private List<GlossarySortField> convertToSortField(
-        String commaSeparatedFields) {
-        List<GlossarySortField> result = Lists.newArrayList();
-
-        String[] fields = StringUtils.split(commaSeparatedFields, ",");
-        if(fields == null || fields.length <= 0) {
-            //default sorting
-            result.add(GlossarySortField
-                    .getByField(GlossarySortField.SRC_CONTENT));
-            return result;
-        }
-
-        for (String field : fields) {
-            GlossarySortField sortField = GlossarySortField.getByField(field);
-            if(sortField != null) {
-                result.add(sortField);
-            }
-        }
-        return result;
-    }
-
-    private int validatePage(int page) {
-        return page < 1 ? 1 : page;
-    }
-
-    private int validatePageSize(int sizePerPage) {
-        return (sizePerPage > MAX_PAGE_SIZE) ? MAX_PAGE_SIZE
-            : ((sizePerPage < 1) ? 1 : sizePerPage);
-    }
-
     @Override
     public Response getEntries(
             @DefaultValue("en-US") @QueryParam("srcLocale") LocaleId srcLocale,
@@ -137,16 +120,18 @@ public class GlossaryService implements GlossaryResource {
             @DefaultValue("1") @QueryParam("page") int page,
             @DefaultValue("1000") @QueryParam("sizePerPage") int sizePerPage,
             @QueryParam("filter") String filter,
-            @QueryParam("sort") String fields) {
+            @QueryParam("sort") String fields,
+            @DefaultValue(GLOBAL_QUALIFIED_NAME) @QueryParam("qualifiedName")
+            String qualifiedName) {
 
         int offset = (validatePage(page) - 1) * validatePageSize(sizePerPage);
 
         List<HGlossaryEntry> hGlossaryEntries =
                 glossaryDAO.getEntriesByLocale(srcLocale, offset,
                         validatePageSize(sizePerPage),
-                        filter, convertToSortField(fields), GlossaryUtil.GLOBAL_QUALIFIED_NAME);
+                        filter, convertToSortField(fields), qualifiedName);
         int totalCount =
-            glossaryDAO.getEntriesCount(srcLocale, filter, GlossaryUtil.GLOBAL_QUALIFIED_NAME);
+            glossaryDAO.getEntriesCount(srcLocale, filter, qualifiedName);
 
         ResultList<GlossaryEntry> resultList = new ResultList<GlossaryEntry>();
         resultList.setTotalCount(totalCount);
@@ -164,10 +149,76 @@ public class GlossaryService implements GlossaryResource {
     }
 
     @Override
+    public Response downloadFile(@DefaultValue("csv") String fileType,
+        String commaSeparatedLanguage,
+        @DefaultValue(GLOBAL_QUALIFIED_NAME) @QueryParam("qualifiedName")
+            String qualifiedName) {
+        if (!identity.isLoggedIn()) {
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+        if (!fileType.equalsIgnoreCase("csv") &&
+            !fileType.equalsIgnoreCase("po")) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity("Not supported file type-" + fileType)
+                .build();
+        }
+        HLocale srcLocale = getSourceLocale();
+
+        // use commaSeparatedLanguage is exist,
+        // otherwise use all translations available for all glossary entry
+        Set<LocaleId> transList;
+        if (StringUtils.isEmpty(commaSeparatedLanguage)) {
+            transList =
+                glossaryDAO.getTranslationLocales(srcLocale.getLocaleId(),
+                    qualifiedName).keySet();
+        } else {
+            transList = Sets.newHashSet();
+            for (String locale : commaSeparatedLanguage.split(",")) {
+                transList.add(new LocaleId(locale));
+            }
+        }
+
+        List<HLocale> supportedLocales =
+            localeServiceImpl.getSupportedLocales();
+
+        // filter out not supported locale from transList
+        List<LocaleId> transLocales = supportedLocales.stream()
+            .filter(hLocale -> transList.contains(hLocale.getLocaleId()))
+            .map(HLocale::getLocaleId).collect(Collectors.toList());
+
+        List<GlossaryEntry> entries = Lists.newArrayList();
+        transferEntriesResource(glossaryDAO.getEntries(qualifiedName), entries);
+
+        try {
+            GlossaryStreamingOutput output;
+            String filename;
+            if (fileType.equalsIgnoreCase("csv")) {
+                filename = "glossary.csv";
+                output = new CSVStreamingOutput(entries,
+                        srcLocale.getLocaleId(), transLocales);
+            } else {
+                filename = "glossary.zip";
+                output = new PotStreamingOutput(entries,
+                        srcLocale.getLocaleId(), transLocales);
+            }
+            return Response
+                    .ok()
+                    .header("Content-Disposition",
+                            "attachment; filename=\"" + filename + "\"")
+                    .entity(output)
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Error while generating glossary file. Please try again")
+                .build();
+        }
+    }
+
+    @Override
     public Response post(List<GlossaryEntry> glossaryEntries) {
         identity.checkPermission("", "glossary-insert");
 
-        GlossaryResults results = saveGlossaryEntries(glossaryEntries);
+        GlossaryResults results = saveOrUpdateGlossaryEntries(glossaryEntries);
         return Response.ok(results).build();
     }
 
@@ -190,7 +241,7 @@ public class GlossaryService implements GlossaryResource {
 
             GlossaryResults overallResult = new GlossaryResults();
             for (List<GlossaryEntry> entries : glossaryEntries) {
-                GlossaryResults result = saveGlossaryEntries(entries);
+                GlossaryResults result = saveOrUpdateGlossaryEntries(entries);
                 overallResult.getGlossaryEntries().addAll(
                         result.getGlossaryEntries());
                 overallResult.getWarnings().addAll(result.getWarnings());
@@ -211,19 +262,6 @@ public class GlossaryService implements GlossaryResource {
         }
     }
 
-    private GlossaryResults saveGlossaryEntries(
-        List<GlossaryEntry> glossaryEntries) {
-
-        GlossaryFileServiceImpl.GlossaryProcessed results =
-                glossaryFileServiceImpl.saveOrUpdateGlossary(glossaryEntries);
-
-        List<GlossaryEntry> glossaryEntriesDTO = Lists.newArrayList();
-        transferEntriesResource(results.getGlossaryEntries(), glossaryEntriesDTO);
-
-        return new GlossaryResults(
-                glossaryEntriesDTO, results.getWarnings());
-    }
-
     @Override
     public Response deleteEntry(Long id) {
         identity.checkPermission("", "glossary-delete");
@@ -242,16 +280,74 @@ public class GlossaryService implements GlossaryResource {
     }
 
     @Override
-    public Response deleteAllEntries() {
+    public Response deleteAllEntries(
+        @DefaultValue(GLOBAL_QUALIFIED_NAME) @QueryParam("qualifiedName")
+            String qualifiedName) {
         identity.checkPermission("", "glossary-delete");
 
-        int rowCount = glossaryDAO.deleteAllEntries(GlossaryUtil.GLOBAL_QUALIFIED_NAME);
+        int rowCount = glossaryDAO.deleteAllEntries(qualifiedName);
         log.info("Glossary delete all: " + rowCount);
 
         return Response.ok().build();
     }
 
-    public void transferEntriesResource(List<HGlossaryEntry> hGlossaryEntries,
+    private int validatePage(int page) {
+        return page < 1 ? 1 : page;
+    }
+
+    private int validatePageSize(int sizePerPage) {
+        return (sizePerPage > MAX_PAGE_SIZE) ? MAX_PAGE_SIZE
+            : ((sizePerPage < 1) ? 1 : sizePerPage);
+    }
+
+    /**
+     * Set en-US as source, should get this from server settings.
+     */
+    private HLocale getSourceLocale() {
+        LocaleId srcLocaleId = LocaleId.EN_US;
+        return localeServiceImpl.getByLocaleId(srcLocaleId);
+    }
+
+    private LocaleDetails generateLocaleDetails(HLocale locale) {
+        return new LocaleDetails(locale.getLocaleId(),
+            locale.retrieveDisplayName(), "");
+    }
+
+    private List<GlossarySortField> convertToSortField(
+        String commaSeparatedFields) {
+        List<GlossarySortField> result = Lists.newArrayList();
+
+        String[] fields = StringUtils.split(commaSeparatedFields, ",");
+        if(fields == null || fields.length <= 0) {
+            //default sorting
+            result.add(GlossarySortField
+                .getByField(GlossarySortField.SRC_CONTENT));
+            return result;
+        }
+
+        for (String field : fields) {
+            GlossarySortField sortField = GlossarySortField.getByField(field);
+            if(sortField != null) {
+                result.add(sortField);
+            }
+        }
+        return result;
+    }
+
+    private GlossaryResults saveOrUpdateGlossaryEntries(
+        List<GlossaryEntry> glossaryEntries) {
+
+        GlossaryFileServiceImpl.GlossaryProcessed results =
+            glossaryFileServiceImpl.saveOrUpdateGlossary(glossaryEntries);
+
+        List<GlossaryEntry> glossaryEntriesDTO = Lists.newArrayList();
+        transferEntriesResource(results.getGlossaryEntries(), glossaryEntriesDTO);
+
+        return new GlossaryResults(
+            glossaryEntriesDTO, results.getWarnings());
+    }
+
+    private void transferEntriesResource(List<HGlossaryEntry> hGlossaryEntries,
             List<GlossaryEntry> glossaryEntries) {
         for (HGlossaryEntry hGlossaryEntry : hGlossaryEntries) {
             GlossaryEntry glossaryEntry = generateGlossaryEntry(hGlossaryEntry);
@@ -324,7 +420,60 @@ public class GlossaryService implements GlossaryResource {
         return glossaryTerm;
     }
 
+    private abstract class GlossaryStreamingOutput implements StreamingOutput {
+        protected final List<GlossaryEntry> entries;
+        protected final LocaleId srcLocaleId;
+        protected final List<LocaleId> transLocales;
 
-    //2 services to get a glossary name for a project and global, return list
-    //all endpoint will take glossary name as query param - default to global/default
+        public GlossaryStreamingOutput(List<GlossaryEntry> entries,
+            LocaleId srcLocaleId, List<LocaleId> transLocales) {
+            this.entries = entries;
+            this.srcLocaleId = srcLocaleId;
+            this.transLocales = transLocales;
+        }
+        public abstract void write(OutputStream output) throws IOException,
+            WebApplicationException;
+    }
+
+    private class CSVStreamingOutput extends GlossaryStreamingOutput {
+        public CSVStreamingOutput(List<GlossaryEntry> entries,
+                LocaleId srcLocaleId, List<LocaleId> transLocales) {
+            super(entries, srcLocaleId, transLocales);
+        }
+        @Override
+        public void write(OutputStream output) throws IOException,
+            WebApplicationException {
+            try {
+                GlossaryCSVWriter writer = new GlossaryCSVWriter();
+                writer.write(output, entries, srcLocaleId, transLocales);
+            } finally {
+                output.close();
+            }
+        }
+    }
+
+    private class PotStreamingOutput extends GlossaryStreamingOutput {
+        public PotStreamingOutput(List<GlossaryEntry> entries,
+            LocaleId srcLocaleId, List<LocaleId> transLocales) {
+            super(entries, srcLocaleId, transLocales);
+        }
+        @Override
+        public void write(OutputStream output) throws IOException,
+            WebApplicationException {
+            final ZipOutputStream zipOutput = new ZipOutputStream(output);
+            zipOutput.setMethod(ZipOutputStream.DEFLATED);
+            try {
+                GlossaryPoWriter writer = new GlossaryPoWriter(false);
+                for (LocaleId transLocale : transLocales) {
+                    String filename = transLocale + ".po";
+                    zipOutput.putNextEntry(new ZipEntry(filename));
+                    writer.write(zipOutput, entries, srcLocaleId, transLocale);
+                    zipOutput.closeEntry();
+                }
+            } finally {
+                zipOutput.close();
+            }
+        }
+
+    }
 }

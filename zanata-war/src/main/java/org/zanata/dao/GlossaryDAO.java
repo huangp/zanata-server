@@ -71,6 +71,18 @@ public class GlossaryDAO extends AbstractDAOImpl<HGlossaryEntry, Long> {
         return (HGlossaryEntry) getSession().load(HGlossaryEntry.class, id);
     }
 
+    public List<HGlossaryEntry> getEntries(String qualifiedName) {
+        StringBuilder queryString = new StringBuilder();
+        queryString.append("select term.glossaryEntry from HGlossaryTerm as term ")
+            .append("where term.locale.localeId = term.glossaryEntry.srcLocale.localeId ")
+            .append("and term.glossaryEntry.glossary.qualifiedName =: qualifiedName ")
+            .append("order by term.content");
+        Query query = getSession().createQuery(queryString.toString());
+        query.setParameter("qualifiedName", qualifiedName)
+                .setComment("GlossaryDAO.getEntries");
+        return query.list();
+    }
+
     public int getEntriesCount(LocaleId srcLocale, String filter,
             String qualifiedName) {
         StringBuilder queryString = new StringBuilder();

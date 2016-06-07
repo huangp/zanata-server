@@ -33,6 +33,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
 public class ProjectService implements ProjectResource {
 
+    /** Project Identifier. */
+    @PathParam("projectSlug")
+    String projectSlug;
+
     @Context
     private Request request;
 
@@ -43,7 +47,7 @@ public class ProjectService implements ProjectResource {
     private ProjectDAO projectDAO;
 
     @Override
-    public Response getProject(@PathParam("projectSlug") String projectSlug) {
+    public Response get() {
         try {
             EntityTag etag = eTagUtils.generateTagForProject(projectSlug);
 
