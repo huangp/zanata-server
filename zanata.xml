@@ -4,5 +4,7 @@
   <project>zanata-server</project>
   <project-version>master</project-version>
   <project-type>properties</project-type>
+  <includes>**/messages.properties</includes>
+  <excludes>**/messages_*.properties</excludes>
 
 </config>
