@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <config xmlns="http://zanata.org/namespace/config/">
-  <url>http://10.64.40.103:8080/zanata/</url>
+  <url>http://10.64.50.243:8080/zanata/</url>
   <project>zanata-server</project>
   <project-version>master</project-version>
   <project-type>properties</project-type>
