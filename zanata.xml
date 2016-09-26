@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <config xmlns="http://zanata.org/namespace/config/">
-  <url>http://localhost:8080/zanata/</url>
+  <url>http://http://zanata-zanatatest.itos.redhat.com/</url>
   <project>zanata-server</project>
   <project-version>master</project-version>
   <project-type>properties</project-type>
